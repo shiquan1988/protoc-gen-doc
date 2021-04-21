@@ -1,6 +1,7 @@
 package gendoc
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -236,6 +237,7 @@ type MessageField struct {
 	IsOneof      bool   `json:"isoneof"`
 	OneofDecl    string `json:"oneofdecl"`
 	DefaultValue string `json:"defaultValue"`
+	Required     bool   `json:"required"`
 
 	Options map[string]interface{} `json:"options,omitempty"`
 }
@@ -474,9 +476,13 @@ func parseMessageExtension(pe *protokit.ExtensionDescriptor) *MessageExtension {
 func parseMessageField(pf *protokit.FieldDescriptor, oneofDecls []*descriptor.OneofDescriptorProto) *MessageField {
 	t, lt, ft := parseType(pf)
 
+	desc := description(pf.GetComments().String())
+	required := strings.Contains(desc, "@required")
+	desc = strings.ReplaceAll(desc, "@required", "")
+
 	m := &MessageField{
 		Name:         pf.GetName(),
-		Description:  description(pf.GetComments().String()),
+		Description:  desc,
 		Label:        labelName(pf.GetLabel(), pf.IsProto3(), pf.GetProto3Optional()),
 		Type:         t,
 		LongType:     lt,
@@ -484,6 +490,7 @@ func parseMessageField(pf *protokit.FieldDescriptor, oneofDecls []*descriptor.On
 		DefaultValue: pf.GetDefaultValue(),
 		Options:      mergeOptions(extractOptions(pf.GetOptions()), extensions.Transform(pf.OptionExtensions)),
 		IsOneof:      pf.OneofIndex != nil,
+		Required:     required,
 	}
 
 	if m.IsOneof {
@@ -572,8 +579,57 @@ func description(comment string) string {
 	if strings.HasPrefix(val, "@exclude") {
 		return ""
 	}
+	// indent json
+	val = IndentJsonInComment(val, "```json", "```")
 
 	return val
+}
+
+func IndentJson(in string) string {
+	var str bytes.Buffer
+	err := json.Indent(&str, []byte(in), "", "  ")
+	if err != nil {
+		return in
+	}
+	out := str.String()
+	return out
+}
+
+
+func IndentJsonInComment(comment string, beginTag string, endTag string) string {
+	originComment := comment
+
+	res := ""
+	for startIdx := strings.Index(comment, beginTag); startIdx > 0; startIdx = strings.Index(comment, beginTag){
+		res += comment[0:startIdx]
+
+		comment = comment[startIdx + len(beginTag):]
+
+		res += beginTag
+
+		endIdx := strings.Index(comment, endTag)
+		if endIdx == -1 {
+			return originComment
+		} else {
+			jsonStr := comment[0: endIdx]
+
+			intendedJson := IndentJson(jsonStr)
+
+			res += "\n" + intendedJson
+
+			res += endTag
+
+			comment = comment[endIdx + len(endTag):]
+
+		}
+	}
+	if res == "" {
+		return comment
+	}
+
+	res += "\n"
+
+	return res
 }
 
 type orderedEnums []*Enum
