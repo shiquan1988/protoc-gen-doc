@@ -17,6 +17,8 @@ var (
 	actionRegex  = regexp.MustCompile("@action.*")
 	versionRegex = regexp.MustCompile("@version.*")
 	titleRegex   = regexp.MustCompile("@title.*")
+
+	scalars = makeScalars()
 )
 
 // Template is a type for encapsulating all the parsed files, messages, fields, enums, services, extensions, etc. into
@@ -33,9 +35,11 @@ func NewTemplate(descs []*protokit.FileDescriptor) *Template {
 	files := make([]*File, 0, len(descs))
 
 	for _, f := range descs {
+		desc := description(f.GetSyntaxComments().String())
+		directive := Directive{Descrition: desc}
 		file := &File{
 			Name:          f.GetName(),
-			Description:   description(f.GetSyntaxComments().String()),
+			Exclude:       directive.Exclude(),
 			Package:       f.GetPackage(),
 			HasEnums:      len(f.Enums) > 0,
 			HasExtensions: len(f.Extensions) > 0,
@@ -46,6 +50,7 @@ func NewTemplate(descs []*protokit.FileDescriptor) *Template {
 			Messages:      make(orderedMessages, 0, len(f.Messages)),
 			Services:      make(orderedServices, 0, len(f.Services)),
 			Options:       mergeOptions(extractOptions(f.GetOptions()), extensions.Transform(f.OptionExtensions)),
+			Description:   description(f.GetSyntaxComments().String()),
 		}
 
 		for _, e := range f.Enums {
@@ -83,7 +88,7 @@ func NewTemplate(descs []*protokit.FileDescriptor) *Template {
 		files = append(files, file)
 	}
 
-	return &Template{Files: files, Scalars: makeScalars()}
+	return &Template{Files: files, Scalars: scalars}
 }
 
 func makeScalars() []*ScalarValue {
@@ -152,6 +157,7 @@ type File struct {
 	HasExtensions bool `json:"hasExtensions"`
 	HasMessages   bool `json:"hasMessages"`
 	HasServices   bool `json:"hasServices"`
+	Exclude       bool `json:"exclude"`
 
 	Enums      orderedEnums      `json:"enums"`
 	Extensions orderedExtensions `json:"extensions"`
@@ -254,6 +260,14 @@ func (d *Directive) Exclude() bool {
 	return exclude
 }
 
+func (d *Directive) Required() bool {
+	required := strings.Contains(d.Descrition, "@required")
+	if required {
+		d.Descrition = strings.ReplaceAll(d.Descrition, "@required", "")
+	}
+	return required
+}
+
 func (d *Directive) Title() string {
 	if d.title != "" {
 		return d.title
@@ -316,6 +330,7 @@ type MessageField struct {
 	OneofDecl    string `json:"oneofdecl"`
 	DefaultValue string `json:"defaultValue"`
 	Required     bool   `json:"required"`
+	IsPrimitive  bool   `json:"isprimitive"`
 
 	Options map[string]interface{} `json:"options,omitempty"`
 }
@@ -569,12 +584,18 @@ func parseMessageField(pf *protokit.FieldDescriptor, oneofDecls []*descriptor.On
 	t, lt, ft := parseType(pf)
 
 	desc := description(pf.GetComments().String())
-	required := strings.Contains(desc, "@required")
-	desc = strings.ReplaceAll(desc, "@required", "")
 
+	directive := Directive{Descrition: desc}
+
+	isPrimitive := false
+	for _, scalar := range scalars {
+		if scalar.ProtoType == t {
+			isPrimitive = true
+			break
+		}
+	}
 	m := &MessageField{
 		Name:         pf.GetName(),
-		Description:  desc,
 		Label:        labelName(pf.GetLabel(), pf.IsProto3(), pf.GetProto3Optional()),
 		Type:         t,
 		LongType:     lt,
@@ -582,7 +603,9 @@ func parseMessageField(pf *protokit.FieldDescriptor, oneofDecls []*descriptor.On
 		DefaultValue: pf.GetDefaultValue(),
 		Options:      mergeOptions(extractOptions(pf.GetOptions()), extensions.Transform(pf.OptionExtensions)),
 		IsOneof:      pf.OneofIndex != nil,
-		Required:     required,
+		Required:     directive.Required(),
+		Description:  directive.Descrition,
+		IsPrimitive:  isPrimitive,
 	}
 
 	if m.IsOneof {
