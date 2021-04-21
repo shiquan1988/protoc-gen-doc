@@ -14,7 +14,8 @@ func TestRenderers(t *testing.T) {
 	set, err := utils.LoadDescriptorSet("fixtures", "fileset.pb")
 	require.NoError(t, err)
 
-	os.Mkdir("./tmp", os.ModePerm)
+	err = os.Mkdir("./tmp", os.ModePerm)
+	require.Nil(t, err)
 
 	req := utils.CreateGenRequest(set, "Booking.proto", "Vehicle.proto")
 	result := protokit.ParseCodeGenRequest(req)

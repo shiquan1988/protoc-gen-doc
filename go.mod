@@ -8,7 +8,7 @@ require (
 	github.com/aokoli/goutils v1.0.1 // indirect
 	github.com/davecgh/go-spew v0.0.0-20161028175848-04cdfd42973b // indirect
 	github.com/envoyproxy/protoc-gen-validate v0.3.0-java
-	github.com/gogo/protobuf v1.1.1 // indirect
+	github.com/gogo/protobuf v1.1.1
 	github.com/golang/protobuf v1.4.2
 	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c // indirect
 	github.com/huandu/xstrings v1.0.0 // indirect
@@ -20,5 +20,6 @@ require (
 	golang.org/x/crypto v0.0.0-20180501155221-613d6eafa307 // indirect
 	golang.org/x/sync v0.0.0-20190412183630-56d357773e84 // indirect
 	google.golang.org/genproto v0.0.0-20181107211654-5fc9ac540362
+	google.golang.org/protobuf v1.23.0
 	gopkg.in/yaml.v2 v2.2.2 // indirect
 )

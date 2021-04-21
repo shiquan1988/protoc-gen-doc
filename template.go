@@ -4,12 +4,19 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/golang/protobuf/protoc-gen-go/descriptor"
 	"github.com/pseudomuto/protoc-gen-doc/extensions"
 	"github.com/pseudomuto/protokit"
+)
+
+var (
+	actionRegex  = regexp.MustCompile("@action.*")
+	versionRegex = regexp.MustCompile("@version.*")
+	titleRegex   = regexp.MustCompile("@title.*")
 )
 
 // Template is a type for encapsulating all the parsed files, messages, fields, enums, services, extensions, etc. into
@@ -80,10 +87,18 @@ func NewTemplate(descs []*protokit.FileDescriptor) *Template {
 }
 
 func makeScalars() []*ScalarValue {
-	data, _ := fetchResource("scalars.json")
+	data, err := fetchResource("scalars.json")
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
 
 	var scalars []*ScalarValue
-	json.Unmarshal(data, &scalars)
+	err = json.Unmarshal(data, &scalars)
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
 
 	return scalars
 }
@@ -182,6 +197,8 @@ type Message struct {
 	Extensions []*MessageExtension `json:"extensions"`
 	Fields     []*MessageField     `json:"fields"`
 
+	Exclude bool `json:"exclude"`
+
 	Options map[string]interface{} `json:"options,omitempty"`
 }
 
@@ -220,6 +237,67 @@ func (m Message) FieldsWithOption(optionName string) []*MessageField {
 		return fields
 	}
 	return nil
+}
+
+type Directive struct {
+	Descrition string
+	action     string
+	version    string
+	title      string
+}
+
+func (d *Directive) Exclude() bool {
+	exclude := strings.Contains(d.Descrition, "@exclude")
+	if exclude {
+		d.Descrition = strings.ReplaceAll(d.Descrition, "@exclude", "")
+	}
+	return exclude
+}
+
+func (d *Directive) Title() string {
+	if d.title != "" {
+		return d.title
+	}
+	titles := titleRegex.FindAllString(d.Descrition, -1)
+	title := ""
+	if len(titles) > 0 {
+		title = strings.ReplaceAll(titles[0], "@title", "")
+		d.Descrition = strings.ReplaceAll(d.Descrition, titles[0], "")
+	}
+	d.title = strings.TrimSpace(title)
+
+	return d.title
+}
+
+func (d *Directive) Action() string {
+	if d.action != "" {
+		return d.action
+	}
+	actions := actionRegex.FindAllString(d.Descrition, -1)
+	action := ""
+	if len(actions) > 0 {
+		action = strings.ReplaceAll(actions[0], "@action", "")
+		d.Descrition = strings.ReplaceAll(d.Descrition, actions[0], "")
+
+	}
+	d.action = strings.TrimSpace(action)
+
+	return d.action
+}
+
+func (d *Directive) Version() string {
+	if d.version != "" {
+		return d.version
+	}
+	versions := versionRegex.FindAllString(d.Descrition, -1)
+	version := ""
+	if len(versions) > 0 {
+		version = strings.ReplaceAll(versions[0], "@version", "")
+		d.Descrition = strings.ReplaceAll(d.Descrition, versions[0], "")
+	}
+	d.version = strings.TrimSpace(version)
+
+	return d.version
 }
 
 // MessageField contains details about an individual field within a message.
@@ -261,6 +339,7 @@ type Enum struct {
 	FullName    string       `json:"fullName"`
 	Description string       `json:"description"`
 	Values      []*EnumValue `json:"values"`
+	Exclude     bool         `json:"exclude"`
 
 	Options map[string]interface{} `json:"options,omitempty"`
 }
@@ -321,6 +400,8 @@ type Service struct {
 	FullName    string           `json:"fullName"`
 	Description string           `json:"description"`
 	Methods     []*ServiceMethod `json:"methods"`
+	Title       string           `json:"title"`
+	Exclude     bool             `json:"exclude"`
 
 	Options map[string]interface{} `json:"options,omitempty"`
 }
@@ -364,18 +445,21 @@ func (s Service) MethodsWithOption(optionName string) []*ServiceMethod {
 
 // ServiceMethod contains details about an individual method within a service.
 type ServiceMethod struct {
-	Name              string `json:"name"`
-	Description       string `json:"description"`
-	RequestType       string `json:"requestType"`
-	RequestLongType   string `json:"requestLongType"`
-	RequestFullType   string `json:"requestFullType"`
-	RequestStreaming  bool   `json:"requestStreaming"`
-	ResponseType      string `json:"responseType"`
-	ResponseLongType  string `json:"responseLongType"`
-	ResponseFullType  string `json:"responseFullType"`
-	ResponseStreaming bool   `json:"responseStreaming"`
-
-	Options map[string]interface{} `json:"options,omitempty"`
+	Name              string                 `json:"name"`
+	Description       string                 `json:"description"`
+	RequestType       string                 `json:"requestType"`
+	RequestLongType   string                 `json:"requestLongType"`
+	RequestFullType   string                 `json:"requestFullType"`
+	RequestStreaming  bool                   `json:"requestStreaming"`
+	ResponseType      string                 `json:"responseType"`
+	ResponseLongType  string                 `json:"responseLongType"`
+	ResponseFullType  string                 `json:"responseFullType"`
+	ResponseStreaming bool                   `json:"responseStreaming"`
+	Title             string                 `json:"title"`
+	Action            string                 `json:"action"`
+	Version           string                 `json:"version"`
+	Exclude           bool                   `json:"exclude"`
+	Options           map[string]interface{} `json:"options,omitempty"`
 }
 
 // Option returns the named option.
@@ -399,11 +483,15 @@ type ScalarValue struct {
 }
 
 func parseEnum(pe *protokit.EnumDescriptor) *Enum {
+	desc := description(pe.GetComments().String())
+	directive := &Directive{Descrition: desc}
+
 	enum := &Enum{
 		Name:        pe.GetName(),
 		LongName:    pe.GetLongName(),
 		FullName:    pe.GetFullName(),
-		Description: description(pe.GetComments().String()),
+		Exclude:     directive.Exclude(),
+		Description: directive.Descrition,
 		Options:     mergeOptions(extractOptions(pe.GetOptions()), extensions.Transform(pe.OptionExtensions)),
 	}
 
@@ -440,11 +528,15 @@ func parseFileExtension(pe *protokit.ExtensionDescriptor) *FileExtension {
 }
 
 func parseMessage(pm *protokit.Descriptor) *Message {
+	desc := description(pm.GetComments().String())
+
+	directive := &Directive{Descrition: desc}
 	msg := &Message{
 		Name:          pm.GetName(),
 		LongName:      pm.GetLongName(),
 		FullName:      pm.GetFullName(),
-		Description:   description(pm.GetComments().String()),
+		Exclude:       directive.Exclude(),
+		Description:   directive.Descrition,
 		HasExtensions: len(pm.GetExtensions()) > 0,
 		HasFields:     len(pm.GetMessageFields()) > 0,
 		HasOneofs:     len(pm.GetOneofDecl()) > 0,
@@ -512,12 +604,17 @@ func parseMessageField(pf *protokit.FieldDescriptor, oneofDecls []*descriptor.On
 }
 
 func parseService(ps *protokit.ServiceDescriptor) *Service {
+	desc := description(ps.GetComments().String())
+	directive := &Directive{Descrition: desc}
+
 	service := &Service{
 		Name:        ps.GetName(),
 		LongName:    ps.GetLongName(),
 		FullName:    ps.GetFullName(),
-		Description: description(ps.GetComments().String()),
+		Title:       directive.Title(),
+		Exclude:     directive.Exclude(),
 		Options:     mergeOptions(extractOptions(ps.GetOptions()), extensions.Transform(ps.OptionExtensions)),
+		Description: directive.Descrition,
 	}
 
 	for _, sm := range ps.Methods {
@@ -528,9 +625,12 @@ func parseService(ps *protokit.ServiceDescriptor) *Service {
 }
 
 func parseServiceMethod(pm *protokit.MethodDescriptor) *ServiceMethod {
+	desc := description(pm.GetComments().String())
+
+	directive := &Directive{Descrition: desc}
+
 	return &ServiceMethod{
 		Name:              pm.GetName(),
-		Description:       description(pm.GetComments().String()),
 		RequestType:       baseName(pm.GetInputType()),
 		RequestLongType:   strings.TrimPrefix(pm.GetInputType(), "."+pm.GetPackage()+"."),
 		RequestFullType:   strings.TrimPrefix(pm.GetInputType(), "."),
@@ -539,7 +639,12 @@ func parseServiceMethod(pm *protokit.MethodDescriptor) *ServiceMethod {
 		ResponseLongType:  strings.TrimPrefix(pm.GetOutputType(), "."+pm.GetPackage()+"."),
 		ResponseFullType:  strings.TrimPrefix(pm.GetOutputType(), "."),
 		ResponseStreaming: pm.GetServerStreaming(),
+		Action:            directive.Action(),
+		Version:           directive.Version(),
+		Title:             directive.Title(),
+		Exclude:           directive.Exclude(),
 		Options:           mergeOptions(extractOptions(pm.GetOptions()), extensions.Transform(pm.OptionExtensions)),
+		Description:       directive.Descrition,
 	}
 }
 
@@ -576,9 +681,7 @@ func parseType(tc typeContainer) (string, string, string) {
 
 func description(comment string) string {
 	val := strings.TrimLeft(comment, "*/\n ")
-	if strings.HasPrefix(val, "@exclude") {
-		return ""
-	}
+
 	// indent json
 	val = IndentJsonInComment(val, "```json", "```")
 
@@ -595,15 +698,15 @@ func IndentJson(in string) string {
 	return out
 }
 
-
 func IndentJsonInComment(comment string, beginTag string, endTag string) string {
 	originComment := comment
 
 	res := ""
-	for startIdx := strings.Index(comment, beginTag); startIdx > 0; startIdx = strings.Index(comment, beginTag){
+	startIdx := -1
+	for startIdx = strings.Index(comment, beginTag); startIdx > 0; startIdx = strings.Index(comment, beginTag) {
 		res += comment[0:startIdx]
 
-		comment = comment[startIdx + len(beginTag):]
+		comment = comment[startIdx+len(beginTag):]
 
 		res += beginTag
 
@@ -611,7 +714,7 @@ func IndentJsonInComment(comment string, beginTag string, endTag string) string 
 		if endIdx == -1 {
 			return originComment
 		} else {
-			jsonStr := comment[0: endIdx]
+			jsonStr := comment[0:endIdx]
 
 			intendedJson := IndentJson(jsonStr)
 
@@ -619,15 +722,15 @@ func IndentJsonInComment(comment string, beginTag string, endTag string) string 
 
 			res += endTag
 
-			comment = comment[endIdx + len(endTag):]
+			comment = comment[endIdx+len(endTag):]
 
 		}
 	}
 	if res == "" {
 		return comment
+	} else {
+		res += comment
 	}
-
-	res += "\n"
 
 	return res
 }

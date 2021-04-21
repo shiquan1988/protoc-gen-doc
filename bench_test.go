@@ -3,6 +3,8 @@ package gendoc_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	. "github.com/pseudomuto/protoc-gen-doc"
 	"github.com/pseudomuto/protokit/utils"
 )
@@ -13,6 +15,7 @@ func BenchmarkParseCodeRequest(b *testing.B) {
 	plugin := new(Plugin)
 
 	for i := 0; i < b.N; i++ {
-		plugin.Generate(req)
+		_, err := plugin.Generate(req)
+		require.Nil(b, err)
 	}
 }

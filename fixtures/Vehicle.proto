@@ -39,6 +39,8 @@ message FindVehicleById {
 
 /**
  * Represents a vehicle model.
+
+   @title 模型
  */
 message Model {
   string id         = 1; // The unique model ID.
@@ -155,3 +157,95 @@ message Vehicle {
 	string cat_name = 12;
   }
 }
+
+
+
+/*
+  图像理解相关接口说明。
+  使用注意事项：
+  - 图像大小限制为5MB,长宽像素不大于10000
+  - 图像像素建议不小于256*256，太小可能会影响识别效果
+  - 接口响应时间依赖于图像的下载时间，请保证图像所在存储服务的稳定性
+  - 建议客户端超时时间设置为5s
+
+  @title 图像理解
+*/
+service ImageService {
+  /*
+    同步识别单张图像。
+
+    HTTP 请求示例
+    请求
+    ```text
+    POST http://annotate.ai.ksyun.com/v1/image:annotate
+    Content-Type: application/json
+    ```
+    ```json
+    {
+        "app_id": 123,
+        "image": {
+            "image_url":"https://datasets.ks3-cn-beijing.ksyun.com/sample.jpg"
+        }
+    }
+    ```
+    响应
+    ```json
+    {
+      "result": {
+        "image_url":
+        "https://datasets.ks3-cn-beijing.ksyun.com/liandanlu/resize/7d71798eedd33b18490b940583a271.jpg",
+        "entities": [
+          {
+            "label": {
+              "id": "100-4-58",
+              "name": "熊"
+            },
+            "properties": {
+              "confidence": 0.8
+            },
+            "parent_labels": [
+              {
+                "id": "100",
+                "name": "陆生类"
+              },
+              {
+                "id": "4",
+                "name": "熊"
+              }
+            ]
+          },
+          {
+            "label": {
+              "id": "400-2-21",
+              "name": "鸟"
+            },
+            "properties": {
+              "confidence": 0.7
+            },
+            "parent_labels": [
+              {
+                "id": "400",
+                "name": "鸟类"
+              },
+              {
+                "id": "2",
+                "name": "鸟"
+              }
+            ]
+          }
+        ],
+        "faces": []
+      },
+      "request_id": "17cbbf733e5a2205"
+    }
+    ```
+    @title   单张图像同步理解
+    @action  AnnotateImage
+    @version 2021-03-18
+  */
+  rpc AnnotateImage(AnnotateImageRequest) returns (AnnotateImageResponse) {
+  };
+
+}
+message AnnotateImageRequest{}
+message AnnotateImageResponse{}

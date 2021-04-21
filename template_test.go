@@ -3,16 +3,19 @@ package gendoc_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/protobuf/protoc-gen-go/descriptor"
 	. "github.com/pseudomuto/protoc-gen-doc"
 	"github.com/pseudomuto/protoc-gen-doc/extensions"
 	"github.com/pseudomuto/protokit"
 	"github.com/pseudomuto/protokit/utils"
 	"github.com/stretchr/testify/require"
+	//"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -44,7 +47,9 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func identity(payload interface{}) interface{} { return payload }
+func identity(payload interface{}) interface{} {
+	return payload
+}
 
 var E_ExtendFile = &proto.ExtensionDesc{
 	ExtendedType:  (*descriptor.FileOptions)(nil),
@@ -438,11 +443,19 @@ func TestExcludedComments(t *testing.T) {
 	require.Equal(t, "the id of this message.", findField("id", message).Description)
 }
 
+func TestDirective(t *testing.T) {
+	service := findService("ImageService", vehicleFile)
+	require.Equal(t, "图像理解", service.Title)
+
+	method := findServiceMethod("AnnotateImage", service)
+	require.Equal(t, "图像理解", method.Title)
+}
+
 func TestJsonIndex(t *testing.T) {
 	actual := `{"args": {},"headers": {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8","Accept-Encoding": "gzip, deflate","Accept-Language": "zh-CN,zh;q=0.9","Connection": "close","Host": "httpbin.org","Upgrade-Insecure-Requests": "1","User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36"},"origin": "103.*.*.*","url": "http://httpbin.org/get"}`
 
 	expected :=
-`{
+		`{
     "args": {},
     "headers": {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
@@ -457,14 +470,13 @@ func TestJsonIndex(t *testing.T) {
     "url": "http://httpbin.org/get"
 }`
 
-
 	var str bytes.Buffer
 	_ = json.Indent(&str, []byte(actual), "", "    ")
 
 	require.Equal(t, expected, str.String())
 }
 
-func TestJsonExtract(t *testing.T)  {
+func TestJsonExtract(t *testing.T) {
 	actual := []string{
 		`step
 tag2_begin
@@ -480,12 +492,13 @@ tag_end
 tag_begin
 {"name":"sample3"}
 tag_end
+step
 `,
 
-"empty",
+		"empty",
 	}
 	expected := []string{
-`step
+		`step
 tag2_begin
 {"name":"sample0"}
 tag_end
@@ -505,8 +518,9 @@ tag_begin
   "name": "sample3"
 }
 tag_end
+step
 `,
-"empty"}
+		"empty"}
 
 	for i := range actual {
 		res := IndentJsonInComment(actual[i], "tag_begin", "tag_end")
@@ -515,6 +529,22 @@ tag_end
 	}
 
 }
+
+func TestRegex(t *testing.T) {
+	comment := `
+	image api
+	
+	@title  图像识别
+	@action AnnotateImage
+	@version 2021-04-21
+`
+
+	reg1 := regexp.MustCompile("@title.*")
+
+	result1 := reg1.FindAllString(comment, -1)
+	fmt.Println(result1)
+}
+
 func findService(name string, f *File) *Service {
 	for _, s := range f.Services {
 		if s.Name == name {
